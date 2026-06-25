@@ -1,0 +1,30 @@
+import { collection, getDocs, getDoc, addDoc, updateDoc, deleteDoc, doc, query, where, serverTimestamp, Timestamp } from "firebase/firestore";
+import { db, isFirebaseConfigured } from "./firebase";
+import { Professional } from "./types";
+import { ProfessionId } from "./professions";
+const MAX_IMAGE_BYTES = 900000;
+export async function compressImage(file: File, maxWidth = 1280, maxBytes = MAX_IMAGE_BYTES): Promise<string> {
+  const dataUrl = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result as string); reader.onerror = reject; reader.readAsDataURL(file); });
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => { const i = new Image(); i.onload = () => resolve(i); i.onerror = reject; i.src = dataUrl; });
+  let { width, height } = img;
+  if (width > maxWidth || height > maxWidth) { if (width > height) { height = Math.round((height * maxWidth) / width); width = maxWidth; } else { width = Math.round((width * maxWidth) / height); height = maxWidth; } }
+  const canvas = document.createElement("canvas"); canvas.width = width; canvas.height = height;
+  const ctx = canvas.getContext("2d"); if (!ctx) throw new Error("Canvas no disponible"); ctx.drawImage(img, 0, 0, width, height);
+  let quality = 0.85; let result = canvas.toDataURL("image/jpeg", quality);
+  while (result.length > maxBytes && quality > 0.3) { quality -= 0.1; result = canvas.toDataURL("image/jpeg", quality); }
+  let scale = 1;
+  while (result.length > maxBytes && scale > 0.2) { scale -= 0.15; canvas.width = Math.round(width * scale); canvas.height = Math.round(height * scale); ctx.drawImage(img, 0, 0, canvas.width, canvas.height); result = canvas.toDataURL("image/jpeg", quality); }
+  return result;
+}
+export async function uploadProfessionalImage(file: File): Promise<string> { if (!file.type.startsWith("image/")) throw new Error("Solo se permiten imágenes"); if (file.size > 10 * 1024 * 1024) throw new Error("La imagen no puede pesar más de 10 MB"); return await compressImage(file); }
+export async function getProfessionalByEmail(email: string): Promise<Professional | null> { if (!isFirebaseConfigured || !db) return null; try { const q = query(collection(db, "profesionales"), where("email", "==", email)); const snap = await getDocs(q); if (snap.empty) return null; return normalizeDoc(snap.docs[0].id, snap.docs[0].data() as any); } catch (e) { console.error("[getProfessionalByEmail] error:", e); return null; } }
+export async function getProfessionalBySlug(slug: string): Promise<Professional | null> { if (!isFirebaseConfigured || !db) return null; try { const q = query(collection(db, "profesionales"), where("slug", "==", slug), where("activo", "==", true)); const snap = await getDocs(q); if (snap.empty) return null; return normalizeDoc(snap.docs[0].id, snap.docs[0].data() as any); } catch { return null; } }
+export async function getProfessionalById(id: string): Promise<Professional | null> { if (!isFirebaseConfigured || !db) return null; try { const docSnap = await getDoc(doc(db, "profesionales", id)); if (!docSnap.exists()) return null; return normalizeDoc(docSnap.id, docSnap.data() as any); } catch (e) { console.error("[getProfessionalById] error:", e); return null; } }
+export async function getAllProfessionals(): Promise<Professional[]> { if (!isFirebaseConfigured || !db) return []; try { const snap = await getDocs(collection(db, "profesionales")); return snap.docs.map(d => normalizeDoc(d.id, d.data() as any)); } catch { return []; } }
+export async function getPublishedProfessionals(): Promise<Professional[]> { if (!isFirebaseConfigured || !db) return []; try { const q = query(collection(db, "profesionales"), where("activo", "==", true)); const snap = await getDocs(q); return snap.docs.map(d => normalizeDoc(d.id, d.data() as any)); } catch { return []; } }
+export async function createProfessional(data: Omit<Professional, "id" | "createdAt" | "updatedAt">): Promise<string> { if (!db) throw new Error("Firestore no configurado"); const docRef = await addDoc(collection(db, "profesionales"), { ...data, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }); return docRef.id; }
+export async function updateProfessional(id: string, data: Partial<Omit<Professional, "id" | "createdAt">>): Promise<void> { if (!db) throw new Error("Firestore no configurado"); await updateDoc(doc(db, "profesionales", id), { ...data, updatedAt: serverTimestamp() }); }
+export async function deleteProfessional(id: string): Promise<void> { if (!db) throw new Error("Firestore no configurado"); await deleteDoc(doc(db, "profesionales", id)); }
+function normalizeDoc(id: string, data: any): Professional {
+  return { id, nombre: data.nombre || "", profesion: (data.profesion as ProfessionId) || "enfermera", especialidad: data.especialidad || "", bio: data.bio || "", fotoUrl: data.fotoUrl, slug: data.slug || id, whatsapp: data.whatsapp || "", telefono: data.telefono || "", email: data.email || "", instagram: data.instagram, facebook: data.facebook, direccion: data.direccion || "", ciudad: data.ciudad || "", estado: data.estado, municipio: data.municipio, parroquia: data.parroquia, zonaServicio: data.zonaServicio, mapsUrl: data.mapsUrl, colorAccent: data.colorAccent, horarioTexto: data.horarioTexto || "", schedule: data.schedule || [], servicios: data.servicios || [], catalogo: data.catalogo || [], mostrarServiciosProfesionales: data.mostrarServiciosProfesionales ?? true, testimonios: data.testimonios || [], certificaciones: data.certificaciones || [], metodosPago: data.metodosPago || [], plan: data.plan || "trial", trialInicio: data.trialInicio, trialFin: data.trialFin, planActivoHasta: data.planActivoHasta, suscripcionSuspendida: data.suscripcionSuspendida ?? false, activo: data.activo ?? true, verificado: data.verificado ?? false, createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toMillis() : data.createdAt, updatedAt: data.updatedAt instanceof Timestamp ? data.updatedAt.toMillis() : data.updatedAt };
+}

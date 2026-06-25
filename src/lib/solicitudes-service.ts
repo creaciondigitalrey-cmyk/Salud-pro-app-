@@ -1,0 +1,10 @@
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, where, serverTimestamp, Timestamp } from "firebase/firestore";
+import { db, isFirebaseConfigured } from "./firebase";
+import { Solicitud } from "./super-admin-config";
+const COLLECTION = "solicitudes";
+export async function getSolicitudesPendientes(): Promise<Solicitud[]> { if (!isFirebaseConfigured || !db) throw new Error("Firebase no configurado"); const q = query(collection(db, COLLECTION), where("estado", "==", "pendiente")); const snap = await getDocs(q); return snap.docs.map(d => normalizeDoc(d.id, d.data() as any)); }
+export async function crearSolicitud(data: Omit<Solicitud, "id" | "estado" | "createdAt">): Promise<string> { if (!isFirebaseConfigured || !db) throw new Error("Firebase no configurado"); const docRef = await addDoc(collection(db, COLLECTION), { ...data, estado: "pendiente", createdAt: serverTimestamp() }); return docRef.id; }
+export async function aprobarSolicitud(solicitud: Solicitud): Promise<void> { if (!isFirebaseConfigured || !db) throw new Error("Firebase no configurado"); await updateDoc(doc(db, COLLECTION, solicitud.id), { estado: "aprobada", updatedAt: serverTimestamp() }); }
+export async function rechazarSolicitud(solicitud: Solicitud): Promise<void> { if (!isFirebaseConfigured || !db) throw new Error("Firebase no configurado"); await updateDoc(doc(db, COLLECTION, solicitud.id), { estado: "rechazada", updatedAt: serverTimestamp() }); }
+export async function eliminarSolicitud(id: string): Promise<void> { if (!isFirebaseConfigured || !db) throw new Error("Firebase no configurado"); await deleteDoc(doc(db, COLLECTION, id)); }
+function normalizeDoc(id: string, data: any): Solicitud { return { id, nombre: data.nombre || "", profesion: data.profesion || "", email: data.email || "", whatsapp: data.whatsapp || "", ciudad: data.ciudad || "", plan: data.plan || "trial", mensaje: data.mensaje, estado: data.estado || "pendiente", createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toMillis() : data.createdAt || Date.now() }; }

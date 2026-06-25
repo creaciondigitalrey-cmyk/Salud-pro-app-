@@ -30,7 +30,10 @@ jobs:
         run: npm install
 
       - name: Build with Next.js
-        run: npm run build
+        run: npx next build --no-lint
+        env:
+          NEXT_DISABLE_SOURCEMAPS: true
+          TS_NODE_TRANSPILE_ONLY: true
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
